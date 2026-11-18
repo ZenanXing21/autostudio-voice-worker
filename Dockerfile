@@ -1,10 +1,13 @@
-FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
+ARG PYTHON_BASE=python:3.12-slim
+FROM ${PYTHON_BASE}
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HF_HOME=/runpod-volume/hf-cache DATA_DIR=/runpod-volume/autostudio
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libsndfile1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt ./
+RUN python -m pip install --no-cache-dir torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
 RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN python -c "import imageio_ffmpeg, shutil; shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), '/usr/local/bin/ffmpeg')" && ffmpeg -hide_banner -encoders | grep -q libmp3lame
 COPY app ./app
+COPY scripts ./scripts
 COPY handler.py config.py start.sh pronunciation.json ./
 RUN chmod +x start.sh
 CMD ["./start.sh"]

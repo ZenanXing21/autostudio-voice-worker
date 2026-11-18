@@ -40,6 +40,8 @@ Serverless 注册使用存放在可信私有上传域名的**短期预签名 HTT
 2. 创建私有 Cloudflare R2 或 S3 桶，生成仅限该桶的访问密钥。配置 `S3_BUCKET`、`S3_ENDPOINT_URL`（AWS S3 留空）、`S3_REGION`、`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`。输出以预签名 GET URL 返回。把密钥作为 RunPod 环境变量或 Secret 提供，不写入镜像或 Git。
 3. 构建镜像并推送到你的私有或公开容器仓库：
 
+   镜像默认使用官方 `python:3.12-slim`，再从 [PyTorch 官方 CUDA 12.6 wheel 索引](https://pytorch.org/get-started/previous-versions/)安装 `torch`/`torchaudio`。FFmpeg 由包含可执行文件的 `imageio-ffmpeg` wheel 提供，构建时检查 `libmp3lame` 编码器。如果本地 Docker Hub 代理返回不一致的镜像清单，可将 `PYTHON_BASE` 指向你信任的 Python 基础镜像镜像站。
+
    ```bash
    docker build -t YOUR_REGISTRY/autostudio-voice-worker:latest .
    docker push YOUR_REGISTRY/autostudio-voice-worker:latest
@@ -47,6 +49,12 @@ Serverless 注册使用存放在可信私有上传域名的**短期预签名 HTT
 
 4. 创建 RunPod **Custom Worker** Endpoint，填入镜像、GPU（建议 24 GB 起）、Network Volume、环境变量。建议先设 `max_workers=1`、`min_workers=0` 控制费用。录音存放在卷和私有桶，不在镜像内。Worker 启动时验证配置、初始化存储、扫描档案、检查 GPU、加载模型，随后调用 `runpod.serverless.start` 等待任务。
 5. 首次启动下载模型可能较慢。可在挂载同一卷的 GPU Pod 中运行 `scripts/download_models.sh` 预热缓存。卷读写及区域配置以 RunPod 控制台当前界面为准。
+
+在接入 Agent 07 前，可在有足够显存的 GPU Pod 中使用已注册在卷上的本人声音进行**不上传对象存储**的试听：
+
+```bash
+python -m scripts.smoke_gpu --data-dir /runpod-volume/autostudio --output-dir /runpod-volume/autostudio/smoke --text '人工智能正在改变世界。'
+```
 
 ## 调用 API
 
@@ -70,9 +78,9 @@ curl -X POST "https://api.runpod.ai/v2/$ENDPOINT_ID/runsync" \
 
 ## 文本、字幕与质量边界
 
-文本按中英文标点断句，超长句再拆至 `CHUNK_CHARS`，各段复用同一 VoiceClonePrompt。`pronunciation.json` 是可编辑的英文技术词替换词典；内容应是模型可读的发音写法，修改后重新构建镜像或以 `PRONUNCIATION_DICTIONARY` 指向卷上文件。数字和百分比做保守处理，复杂版本号、缩写和项目名需人工检查发音。
+文本按中英文标点断句，每个普通句子单独生成，超长句再拆至 `CHUNK_CHARS`，各段复用同一 VoiceClonePrompt。`pronunciation.json` 是可编辑的英文技术词替换词典；内容应是模型可读的发音写法，修改后重新构建镜像或以 `PRONUNCIATION_DICTIONARY` 指向卷上文件。数字和百分比做保守处理，复杂版本号、缩写和项目名需人工检查发音。
 
-`segments.json` 和 `captions.srt` 的时间范围来自**实际生成后每段音频的采样数**，包含每段音频内部的停顿；段间插入 120 ms 静音。它们是音频片段级时间边界，**不是 WhisperX 强制对齐、词级或字级时间戳**。混合语言可生成片段级字幕。若要求严格的句子内对齐，应在真实中英混合测试集上验证 WhisperX 或其他中文对齐器后另行接入。原始拼接 WAV 和最终响度处理的 WAV 均上传到私有对象存储，分别由 `raw_wav_url` 和 `wav_url` 返回。可选降噪尚未启用，避免损伤参考音色。
+`segments.json` 和 `captions.srt` 的时间范围来自**实际生成后每句音频的采样数**，包含句内的停顿；句间插入 120 ms 静音。普通长度的句子对应一个音频片段，因此字幕有句子级片段边界；超长句会拆成多个片段。它们**不是 WhisperX 强制对齐、词级或字级时间戳**。中英混合文本也按相同规则输出。若要求精确到句内实际发声起止点，应在真实中英混合测试集上验证 WhisperX 或其他中文对齐器后另行接入。原始拼接 WAV 和最终响度处理的 WAV 均上传到私有对象存储，分别由 `raw_wav_url` 和 `wav_url` 返回。可选降噪尚未启用，避免损伤参考音色。
 
 ## 成本、测试与故障
 
@@ -86,3 +94,13 @@ docker build -t autostudio-voice-worker:local .
 ```
 
 `CUDA GPU is required`：检查 RunPod GPU 类型和 Endpoint；`GPU out of memory`：减小 `CHUNK_CHARS` 或换更大 GPU；找不到声音：确认同一区域挂载同一 Network Volume、`DATA_DIR` 正确；注册失败：核对录音与逐字稿、白名单、私有 URL 有效期；S3 上传失败：核对密钥、桶、区域和 R2 endpoint。使用真实 GPU 与本人授权录音完成端到端试听后再接 Agent 07。
+
+### 本地验证记录（2026-11-19）
+
+在 Docker Hub 代理返回错误清单的环境中，使用已缓存的可信 Python 镜像构建：
+
+```bash
+docker build --build-arg PYTHON_BASE=docker.m.daocloud.io/library/python:3.12-slim -t autostudio-voice-worker:local .
+```
+
+该构建成功；容器内 `qwen_tts`、RunPod、PyTorch 2.7.1+cu126 可导入，FFmpeg 提供 `libmp3lame`，CUDA 可见 6 GB 的 RTX 3060 Laptop GPU。参考音频预处理已在容器内实测。**未加载 1.7B 模型权重，也未完成真实语音生成或词级对齐验证。** `qwen_tts` 导入时可能提示 SoX 未安装；检查安装包后发现 SoX 调用位于 25 Hz tokenizer，当前 Worker 使用 12 Hz Base。部署前仍应运行上面的 GPU 试听脚本验证完整推理。

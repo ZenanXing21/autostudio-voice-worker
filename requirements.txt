@@ -4,3 +4,4 @@ boto3>=1.35,<2
 requests>=2.32,<3
 numpy>=1.26,<3
 soundfile>=0.13,<1
+imageio-ffmpeg==0.8.1
