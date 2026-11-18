@@ -53,8 +53,10 @@ Serverless 注册使用存放在可信私有上传域名的**短期预签名 HTT
 在接入 Agent 07 前，可在有足够显存的 GPU Pod 中使用已注册在卷上的本人声音进行**不上传对象存储**的试听：
 
 ```bash
-python -m scripts.smoke_gpu --data-dir /runpod-volume/autostudio --output-dir /runpod-volume/autostudio/smoke --text '人工智能正在改变世界。'
+python -m scripts.smoke_gpu --data-dir /runpod-volume/autostudio --output-dir /runpod-volume/autostudio/smoke --text '人工智能正在改变世界。' --format mp3
 ```
+
+试听脚本生成 `audio.wav`、`audio_raw.wav`、`audio.mp3`、`captions.srt` 和 `segments.json`；字幕时间来自实际生成音频的片段采样数，只标记片段边界。6 GB GPU 可临时改用官方 `Qwen/Qwen3-TTS-12Hz-0.6B-Base` 验证克隆流程，生产默认仍为 1.7B Base。Windows Docker 绑定目录读取大权重可能很慢；RunPod 的 Linux Network Volume 或 Docker Linux 卷更适合模型缓存。
 
 ## 调用 API
 

@@ -68,7 +68,7 @@ class VoiceManager:
         try:
             quality = prepare_reference(source, staged)
             os.replace(staged, audio)
-            profile = {"voice_id": voice_name, "voice_name": voice_name, "reference_audio_path": str(audio), "reference_text": reference_text.strip(), "language": language, "style": style, "created_at": datetime.now(timezone.utc).isoformat(), "quality": quality}
+            profile = {"voice_id": voice_name, "voice_name": voice_name, "reference_audio_path": audio.name, "reference_text": reference_text.strip(), "language": language, "style": style, "created_at": datetime.now(timezone.utc).isoformat(), "quality": quality}
             temp_meta = metadata.with_suffix(".tmp")
             temp_meta.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(temp_meta, metadata)
@@ -80,7 +80,7 @@ class VoiceManager:
                     metadata.unlink(missing_ok=True)
                     audio.unlink(missing_ok=True)
                     raise
-            return profile
+            return {**profile, "reference_audio_path": str(audio)}
         finally:
             staged.unlink(missing_ok=True)
 
