@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+data
+voices
+samples
+*.wav
+*.mp3
+*.m4a
+*.safetensors
+tests
+README.md
