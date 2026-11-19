@@ -5,9 +5,12 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir torch==2.7.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
 RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends sox && rm -rf /var/lib/apt/lists/*
 RUN python -c "import imageio_ffmpeg, shutil; shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), '/usr/local/bin/ffmpeg')" && ffmpeg -hide_banner -encoders | grep -q libmp3lame
+ENV HF_HOME=/workspace/hf-cache DATA_DIR=/workspace/autostudio OUTPUT_DIR=/workspace/outputs WORKER_MODE=pod
 COPY app ./app
 COPY scripts ./scripts
-COPY handler.py config.py start.sh pronunciation.json ./
+COPY api.py handler.py config.py start.sh pronunciation.json ./
 RUN chmod +x start.sh
+EXPOSE 8000
 CMD ["./start.sh"]

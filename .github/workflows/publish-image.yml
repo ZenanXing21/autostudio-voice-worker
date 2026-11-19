@@ -8,6 +8,7 @@ on:
       - Dockerfile
       - requirements.txt
       - app/**
+      - api.py
       - scripts/**
       - handler.py
       - config.py

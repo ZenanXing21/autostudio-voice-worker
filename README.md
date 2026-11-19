@@ -1,17 +1,17 @@
 # AutoStudio Voice Worker
 
-RunPod Serverless 配音 Worker。Agent 07 提交文本和已注册的声音 ID，服务使用 **Qwen3-TTS Base 的参考音频 ICL 克隆**生成中文、英文或混合语音。只注册本人或已明确授权的声音。
+RunPod Pod 常驻 HTTP 配音服务。Agent 07 提交文本和已注册的声音 ID，服务使用 **Qwen3-TTS Base 的参考音频 ICL 克隆**生成中文、英文或混合语音。镜像默认运行 FastAPI；原有 Serverless handler 仍可通过 `WORKER_MODE=serverless` 启用。只注册本人或已明确授权的声音。
 
 ## 架构
 
 ```text
-Agent 07 -> RunPod job -> 规范化/分句 -> 同一 VoiceClonePrompt 逐段推理
+Agent 07 -> Pod HTTP /tts -> 规范化/分句 -> 同一 VoiceClonePrompt 逐段推理
                                       -> FFmpeg 调速/拼接/响度 -> WAV/MP3 + SRT/JSON
-                                      -> 配置 S3/R2 时返回预签名 URL；否则保存到 OUTPUT_DIR 并返回本地路径
+                                      -> 配置 S3/R2 时返回预签名 URL；否则保存到 OUTPUT_DIR 并返回鉴权下载 URL
 注册音频 HTTPS -> 下载限制 -> FFmpeg 24 kHz 单声道 -> 质量检查 -> DATA_DIR 私有档案（配置 S3/R2 时再备份）
 ```
 
-`app/voice_manager.py` 管理声音，`tts_engine.py` 仅调用 Base 克隆接口，`audio_processor.py` 处理媒体，`storage.py` 管理本地或私有对象存储。声音档案、模型缓存和本地输出分别位于 `$DATA_DIR/voices`、`$HF_HOME` 和 `$OUTPUT_DIR`。这些目录如需跨 Pod/worker 重建保留，必须放在持久化卷。容器镜像不含录音或模型权重。
+`api.py` 提供 HTTP 鉴权和下载，`app/handler.py` 复用原有推理流程，`app/voice_manager.py` 管理声音，`tts_engine.py` 仅调用 Base 克隆接口，`audio_processor.py` 处理媒体，`storage.py` 管理本地或私有对象存储。声音档案、模型缓存和本地输出分别位于 `$DATA_DIR/voices`、`$HF_HOME` 和 `$OUTPUT_DIR`。这些目录如需跨 Pod 重建保留，必须放在持久化卷。容器镜像不含录音或模型权重。
 
 ## 模型、许可证与硬件
 
@@ -19,7 +19,7 @@ Agent 07 -> RunPod job -> 规范化/分句 -> 同一 VoiceClonePrompt 逐段推�
 - 模型 ID 为 [`Qwen/Qwen3-TTS-12Hz-1.7B-Base`](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base)。该模型卡及[上游许可证](https://github.com/QwenLM/Qwen3-TTS/blob/main/LICENSE)标注 Apache-2.0；部署前仍请复核所选模型版本与许可。
 - CustomVoice 的预设说话人和 VoiceDesign 的指令接口不替代 Base 的参考音频克隆。Base 未公开可验证的 `style` 或 `speed` 生成参数：速度由 FFmpeg `atempo` 实现；风格需要分别注册**同一人**的 documentary / energetic / calm / conversational 参考录音，未注册的风格会报错。风格效果取决于参考录音，不能保证模型精确复现情绪。
 - 建议从 **24 GB 显存**的 RunPod GPU 起步，`max_workers=1`，测试你的实际文本长度后调整。模型卡未给出本项目可保证的最低显存；24 GB 是保守的部署起点，不是官方硬性要求。Worker 启动时检查 CUDA，根据 GPU 架构选择 bf16/fp16，并使用 SDPA。OOM 时清空 CUDA 缓存并报告错误。
-- 代码与接口按 2026-11-19 官方资料核对；**尚未在真实 GPU 上运行验证**。
+- 代码与接口按 2026-11-19 官方资料核对；本地 6 GB GPU 上已验证 0.6B Base 克隆，**1.7B Base 尚未在 RunPod 上验证**。
 
 ## 录音与声音注册
 
@@ -28,13 +28,31 @@ Agent 07 -> RunPod job -> 规范化/分句 -> 同一 VoiceClonePrompt 逐段推�
 本地注册（在容器内或装有依赖的 Python 环境）：
 
 ```bash
-export DATA_DIR=/runpod-volume/autostudio
+export DATA_DIR=/workspace/autostudio
 python -m scripts.register_voice /private/my_voice.m4a --voice-name tech_narrator --reference-text '这里填写录音对应的准确文本' --language Chinese
 ```
 
 Serverless 注册使用存放在可信私有上传域名的**短期预签名 HTTPS 下载 URL**，将该域名加入 `REFERENCE_HOSTS`。不使用 URL 注册时可留空；但此时 `register_voice` API 会拒绝 URL。服务拒绝不在白名单内的域名、非公网地址、跳转和超大文件。RunPod API key 可调用端点，务必限制其持有者；音频 URL 本身可能暴露访问权，尽量缩短有效期。档案写入 `DATA_DIR`，配置 S3/R2 后另存私有备份；本地模式不自动备份。不要把声音文件放进 Git、Docker build context 或公开桶。
 
-## 部署 RunPod Serverless
+## 部署 RunPod Pod + HTTP API
+
+1. 将镜像 `ghcr.io/zenanxing21/autostudio-voice-worker:sha-<已成功发布的提交前 12 位>` 填入 GPU Pod，给 Pod 配置持久化 `/workspace` 卷，并暴露 `8000/http`（如需 SSH，再保留 `22/tcp`）。RunPod 的 [Pod 代理 URL](https://docs.runpod.io/runpodctl/reference/runpodctl-remove-pods) 格式为 `https://<POD_ID>-8000.proxy.runpod.net`。镜像里的 Uvicorn 已监听 `0.0.0.0:8000`；不要让未设置 `API_TOKEN` 的 Pod 对公网服务。
+2. 在 RunPod Secret/环境变量中设置一个**长随机** `API_TOKEN`；还可设置 `MODEL_ID=Qwen/Qwen3-TTS-12Hz-1.7B-Base`。镜像默认 `HF_HOME=/workspace/hf-cache`、`DATA_DIR=/workspace/autostudio`、`OUTPUT_DIR=/workspace/outputs`、`WORKER_MODE=pod`、`S3_BUCKET` 为空。若模型已在卷中，可设 `MODEL_ID=/workspace/models/Qwen3-TTS-12Hz-1.7B-Base`。私有录音只放在 `/workspace/autostudio/voices`，不要放进镜像或公开仓库。GPU 初始化完成后 `/health` 才会响应 `ready: true`。
+3. 在 Pod 内用上面的 `python -m scripts.register_voice` 注册本人录音，并确保 `tech_narrator` 档案存在。随后从 Agent 07 调用：
+
+   ```bash
+   BASE_URL="https://<POD_ID>-8000.proxy.runpod.net"
+   curl -fsS "$BASE_URL/health"
+   curl -fsS -X POST "$BASE_URL/tts" \
+     -H "Authorization: Bearer $API_TOKEN" -H 'Content-Type: application/json' \
+     -d '{"text":"你好，这是一段测试语音。","voice":"tech_narrator","language":"Chinese","style":"documentary","speed":1.0,"format":"wav","job_id":"job-001"}'
+   ```
+
+   `/tts` 同步返回 `status`、`job_id`、`audio_url`、`wav_url`、`captions_url`、`segments_url`、时长等字段。`voice` 省略或写 `default` 时使用 `tech_narrator`。`job_id` 只供请求关联，实际文件目录由服务生成。下载也要带同一个 Bearer token，例如 `curl -fL -H "Authorization: Bearer $API_TOKEN" "$AUDIO_URL" -o audio.wav`。返回的 `audio_path` 是 Pod 内路径，供排查使用。`/health` 不要求 token；`/tts` 与下载要求 token。错误会使用 4xx/5xx 状态码；GPU 忙时返回 409。API 只允许一次 GPU 推理。
+
+4. 无需 S3 即可通过受保护的 Pod 下载 URL 访问本地输出。Pod 停止期间 HTTP URL 不可用，持久化卷上的文件仍保留；若需 Pod 停止后持续下载，可配置私有 S3/R2。Pod 持续运行时按运行时长计费，低频使用应在任务完成后停止 Pod，并留意卷存储费用。
+
+## 可选：RunPod Serverless 旧入口
 
 1. 在 RunPod 创建 Network Volume，选择和 Serverless Endpoint 相同区域，挂载在 `/runpod-volume`。参考 [RunPod Serverless 文档](https://docs.runpod.io/serverless/overview) 和 [Network Volumes 文档](https://docs.runpod.io/storage/network-volumes)。卷持久保存声音及 Hugging Face 模型缓存；冷启动首次下载权重，之后复用缓存。
 2. Agent 07 若从另一台服务读取输出，请创建私有 Cloudflare R2 或 S3 桶，生成仅限该桶的访问密钥。配置 `S3_BUCKET`、`S3_ENDPOINT_URL`（AWS S3 留空）、`S3_REGION`、`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`。输出以预签名 GET URL 返回。把密钥作为 RunPod 环境变量或 Secret 提供，不写入镜像或 Git。仅在同一持久化文件系统内处理输出时，可以留空 `S3_BUCKET`，使用 `OUTPUT_DIR` 本地模式。
@@ -46,7 +64,7 @@ Serverless 注册使用存放在可信私有上传域名的**短期预签名 HTT
    docker build -t autostudio-voice-worker:local .
    ```
 
-4. 该 GHCR 包已设为 **Public**，RunPod 的 **Container Registry Credentials** 留空即可匿名拉取；公开镜像层包含 Worker 代码，但不包含录音或密钥。创建 RunPod **Custom Worker** Endpoint 时，镜像填写本次 Actions 发布的 `ghcr.io/zenanxing21/autostudio-voice-worker:sha-<提交前 12 位>`（或 `latest`），GPU 建议 24 GB 起，挂载 Network Volume 并设置环境变量。本地镜像解包后约 10.8 GB，容器磁盘建议设为 **30 GB**，避免 10 GB 配额不足。建议先设 `max_workers=1`、`min_workers=0` 控制费用。录音存放在卷和私有桶，不在镜像内。Worker 启动时验证配置、初始化存储、扫描档案、检查 GPU、加载模型，随后调用 `runpod.serverless.start` 等待任务。
+4. 该 GHCR 包已设为 **Public**，RunPod 的 **Container Registry Credentials** 留空即可匿名拉取；公开镜像层包含 Worker 代码，但不包含录音或密钥。创建 RunPod **Custom Worker** Endpoint 时，镜像填写本次 Actions 发布的 `ghcr.io/zenanxing21/autostudio-voice-worker:sha-<提交前 12 位>`（或 `latest`），设置 `WORKER_MODE=serverless`、`HF_HOME=/runpod-volume/hf-cache`、`DATA_DIR=/runpod-volume/autostudio`，GPU 建议 24 GB 起，挂载 Network Volume。本地镜像解包后原约 10.8 GB，加入 HTTP 依赖和 SoX 后请按新镜像实际大小配置容器磁盘，建议先设 **30 GB**。建议先设 `max_workers=1`、`min_workers=0` 控制费用。Worker 启动时验证配置、初始化存储、扫描档案、检查 GPU、加载模型，随后调用 `runpod.serverless.start` 等待任务。
 5. 首次启动下载模型可能较慢。可在挂载同一卷的 GPU Pod 中运行 `scripts/download_models.sh` 预热缓存。卷读写及区域配置以 RunPod 控制台当前界面为准。
 
 ### 在 Pod 上使用 `/workspace`（无 S3）
@@ -99,12 +117,12 @@ curl -X POST "https://api.runpod.ai/v2/$ENDPOINT_ID/runsync" \
 
 ## 成本、测试与故障
 
-`min_workers=0` 省闲置 GPU 费，但增加冷启动时间；持久化 HF 缓存减少重复下载。短文本、较小 `CHUNK_CHARS`、单 worker 限制并发与显存峰值。清理过期输出对象可在桶生命周期规则中设置；本地输出需自行清理，但不要自动删除私有声音档案。每日一个视频时，可先分别使用视频和声音两个按需 Endpoint，再根据实际计费秒数比较合并 Endpoint；视频**成片时长**不是 GPU 运行时长。当前声音 Worker 要求 CUDA GPU，未实现 CPU 推理。
+Pod 停机后不再支付 GPU 运行费，但持久化卷继续计费；持久化 HF 缓存减少重复下载。短文本、较小 `CHUNK_CHARS`、单 GPU 请求限制并发与显存峰值。清理过期输出对象可在桶生命周期规则中设置；本地输出需自行清理，但不要自动删除私有声音档案。视频**成片时长**不是 GPU 运行时长。当前声音 Worker 要求 CUDA GPU，未实现 CPU 推理。
 
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
-python -m compileall -q app handler.py scripts
+python -m compileall -q app api.py handler.py scripts
 docker build -t autostudio-voice-worker:local .
 ```
 
@@ -118,4 +136,4 @@ docker build -t autostudio-voice-worker:local .
 docker build --build-arg PYTHON_BASE=docker.m.daocloud.io/library/python:3.12-slim -t autostudio-voice-worker:local .
 ```
 
-该构建成功；容器内 `qwen_tts`、RunPod、PyTorch 2.7.1+cu126 可导入，FFmpeg 提供 `libmp3lame`，CUDA 可见 6 GB 的 RTX 3060 Laptop GPU。使用授权参考音频与官方 0.6B Base 模型完成了中英两段真实 GPU 推理，输出 7.63 秒 WAV、MP3、SRT 和片段 JSON。**1.7B Base 尚未在 RunPod 实测；字幕也没有词级或字级强制对齐。** `qwen_tts` 导入时可能提示 SoX 未安装；检查安装包后发现 SoX 调用位于 25 Hz tokenizer，当前 Worker 使用 12 Hz Base。
+旧 Serverless 构建成功；容器内 `qwen_tts`、RunPod、PyTorch 2.7.1+cu126 可导入，FFmpeg 提供 `libmp3lame`，CUDA 可见 6 GB 的 RTX 3060 Laptop GPU。使用授权参考音频与官方 0.6B Base 模型完成了中英两段真实 GPU 推理，输出 7.63 秒 WAV、MP3、SRT 和片段 JSON。**1.7B Base 尚未在 RunPod 实测；字幕也没有词级或字级强制对齐。** 新 Pod 镜像额外安装 SoX，消除 `sox: not found` 环境报错。
