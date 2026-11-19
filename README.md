@@ -46,7 +46,7 @@ Serverless 注册使用存放在可信私有上传域名的**短期预签名 HTT
    docker build -t autostudio-voice-worker:local .
    ```
 
-4. GHCR 包保持**私有**。在 GitHub 创建仅用于拉取的 personal access token (classic)，至少授予 `read:packages`；在 RunPod 的 **Container Registry Credentials** 中保存 GitHub 用户名 `ZenanXing21` 和该 token。创建 RunPod **Custom Worker** Endpoint 时选择此 registry credential，镜像填写 `ghcr.io/zenanxing21/autostudio-voice-worker:latest`（或固定 `sha-...` 标签），GPU 建议 24 GB 起，挂载 Network Volume 并设置环境变量。建议先设 `max_workers=1`、`min_workers=0` 控制费用。录音存放在卷和私有桶，不在镜像内。Worker 启动时验证配置、初始化存储、扫描档案、检查 GPU、加载模型，随后调用 `runpod.serverless.start` 等待任务。不要把 token 写入仓库、镜像或 Endpoint 普通日志。
+4. GHCR 包保持**私有**。在 GitHub 创建仅用于拉取的 personal access token (classic)，至少授予 `read:packages`；在 RunPod 的 **Container Registry Credentials** 中保存 GitHub 用户名 `ZenanXing21` 和该 token。创建 RunPod **Custom Worker** Endpoint 时选择此 registry credential，镜像填写 `ghcr.io/zenanxing21/autostudio-voice-worker:latest`（或固定 `sha-...` 标签），GPU 建议 24 GB 起，挂载 Network Volume 并设置环境变量。本地镜像解包后约 10.8 GB，容器磁盘建议设为 **30 GB**，避免 10 GB 配额不足。建议先设 `max_workers=1`、`min_workers=0` 控制费用。录音存放在卷和私有桶，不在镜像内。Worker 启动时验证配置、初始化存储、扫描档案、检查 GPU、加载模型，随后调用 `runpod.serverless.start` 等待任务。不要把 token 写入仓库、镜像或 Endpoint 普通日志。
 5. 首次启动下载模型可能较慢。可在挂载同一卷的 GPU Pod 中运行 `scripts/download_models.sh` 预热缓存。卷读写及区域配置以 RunPod 控制台当前界面为准。
 
 在接入 Agent 07 前，可在有足够显存的 GPU Pod 中使用已注册在卷上的本人声音进行**不上传对象存储**的试听：
