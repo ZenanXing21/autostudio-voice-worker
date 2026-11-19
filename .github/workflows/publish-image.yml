@@ -1,0 +1,44 @@
+name: Publish private GHCR image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-image.yml
+      - Dockerfile
+      - requirements.txt
+      - app/**
+      - scripts/**
+      - handler.py
+      - config.py
+      - start.sh
+      - pronunciation.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show available disk space
+        run: df -h /
+      - name: Build and publish linux/amd64 image
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          sha_tag="sha-${GITHUB_SHA:0:12}"
+          docker build --platform linux/amd64 \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --tag "$image:latest" --tag "$image:$sha_tag" .
+          docker push "$image:latest"
+          docker push "$image:$sha_tag"
+          docker manifest inspect "$image:$sha_tag" >/dev/null
+          echo "Published $image:latest and $image:$sha_tag"

@@ -38,16 +38,15 @@ Serverless 注册使用存放在可信私有上传域名的**短期预签名 HTT
 
 1. 在 RunPod 创建 Network Volume，选择和 Serverless Endpoint 相同区域，挂载在 `/runpod-volume`。参考 [RunPod Serverless 文档](https://docs.runpod.io/serverless/overview) 和 [Network Volumes 文档](https://docs.runpod.io/storage/network-volumes)。卷持久保存声音及 Hugging Face 模型缓存；冷启动首次下载权重，之后复用缓存。
 2. 创建私有 Cloudflare R2 或 S3 桶，生成仅限该桶的访问密钥。配置 `S3_BUCKET`、`S3_ENDPOINT_URL`（AWS S3 留空）、`S3_REGION`、`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`。输出以预签名 GET URL 返回。把密钥作为 RunPod 环境变量或 Secret 提供，不写入镜像或 Git。
-3. 构建镜像并推送到你的私有或公开容器仓库：
+3. `main` 分支更新后，GitHub Actions 的 `publish-image.yml` 会构建 Linux AMD64 镜像并发布到私有 GHCR：`ghcr.io/zenanxing21/autostudio-voice-worker:latest`，同时发布 `sha-<提交前 12 位>` 固定标签。在仓库 **Actions** 页确认发布任务成功后，再在 RunPod 填写该镜像地址。**本机的 `autostudio-voice-worker:local` 无法被 RunPod 拉取。**
 
    镜像默认使用官方 `python:3.12-slim`，再从 [PyTorch 官方 CUDA 12.6 wheel 索引](https://pytorch.org/get-started/previous-versions/)安装 `torch`/`torchaudio`。FFmpeg 由包含可执行文件的 `imageio-ffmpeg` wheel 提供，构建时检查 `libmp3lame` 编码器。如果本地 Docker Hub 代理返回不一致的镜像清单，可将 `PYTHON_BASE` 指向你信任的 Python 基础镜像镜像站。
 
    ```bash
-   docker build -t YOUR_REGISTRY/autostudio-voice-worker:latest .
-   docker push YOUR_REGISTRY/autostudio-voice-worker:latest
+   docker build -t autostudio-voice-worker:local .
    ```
 
-4. 创建 RunPod **Custom Worker** Endpoint，填入镜像、GPU（建议 24 GB 起）、Network Volume、环境变量。建议先设 `max_workers=1`、`min_workers=0` 控制费用。录音存放在卷和私有桶，不在镜像内。Worker 启动时验证配置、初始化存储、扫描档案、检查 GPU、加载模型，随后调用 `runpod.serverless.start` 等待任务。
+4. GHCR 包保持**私有**。在 GitHub 创建仅用于拉取的 personal access token (classic)，至少授予 `read:packages`；在 RunPod 的 **Container Registry Credentials** 中保存 GitHub 用户名 `ZenanXing21` 和该 token。创建 RunPod **Custom Worker** Endpoint 时选择此 registry credential，镜像填写 `ghcr.io/zenanxing21/autostudio-voice-worker:latest`（或固定 `sha-...` 标签），GPU 建议 24 GB 起，挂载 Network Volume 并设置环境变量。建议先设 `max_workers=1`、`min_workers=0` 控制费用。录音存放在卷和私有桶，不在镜像内。Worker 启动时验证配置、初始化存储、扫描档案、检查 GPU、加载模型，随后调用 `runpod.serverless.start` 等待任务。不要把 token 写入仓库、镜像或 Endpoint 普通日志。
 5. 首次启动下载模型可能较慢。可在挂载同一卷的 GPU Pod 中运行 `scripts/download_models.sh` 预热缓存。卷读写及区域配置以 RunPod 控制台当前界面为准。
 
 在接入 Agent 07 前，可在有足够显存的 GPU Pod 中使用已注册在卷上的本人声音进行**不上传对象存储**的试听：
@@ -105,4 +104,4 @@ docker build -t autostudio-voice-worker:local .
 docker build --build-arg PYTHON_BASE=docker.m.daocloud.io/library/python:3.12-slim -t autostudio-voice-worker:local .
 ```
 
-该构建成功；容器内 `qwen_tts`、RunPod、PyTorch 2.7.1+cu126 可导入，FFmpeg 提供 `libmp3lame`，CUDA 可见 6 GB 的 RTX 3060 Laptop GPU。参考音频预处理已在容器内实测。**未加载 1.7B 模型权重，也未完成真实语音生成或词级对齐验证。** `qwen_tts` 导入时可能提示 SoX 未安装；检查安装包后发现 SoX 调用位于 25 Hz tokenizer，当前 Worker 使用 12 Hz Base。部署前仍应运行上面的 GPU 试听脚本验证完整推理。
+该构建成功；容器内 `qwen_tts`、RunPod、PyTorch 2.7.1+cu126 可导入，FFmpeg 提供 `libmp3lame`，CUDA 可见 6 GB 的 RTX 3060 Laptop GPU。使用授权参考音频与官方 0.6B Base 模型完成了中英两段真实 GPU 推理，输出 7.63 秒 WAV、MP3、SRT 和片段 JSON。**1.7B Base 尚未在 RunPod 实测；字幕也没有词级或字级强制对齐。** `qwen_tts` 导入时可能提示 SoX 未安装；检查安装包后发现 SoX 调用位于 25 Hz tokenizer，当前 Worker 使用 12 Hz Base。
