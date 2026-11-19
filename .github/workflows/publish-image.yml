@@ -1,4 +1,4 @@
-name: Publish private GHCR image
+name: Publish GHCR image
 
 on:
   push:

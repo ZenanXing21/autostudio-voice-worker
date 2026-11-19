@@ -8,6 +8,7 @@ class Settings:
     model_id: str = os.getenv("MODEL_ID", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
     data_dir: Path = Path(os.getenv("DATA_DIR", "/runpod-volume/autostudio"))
     hf_home: Path = Path(os.getenv("HF_HOME", "/runpod-volume/hf-cache"))
+    output_dir: Path = Path(os.getenv("OUTPUT_DIR", "/workspace/outputs"))
     s3_bucket: str = os.getenv("S3_BUCKET", "")
     s3_endpoint_url: str = os.getenv("S3_ENDPOINT_URL", "")
     s3_region: str = os.getenv("S3_REGION", "auto")
@@ -20,7 +21,3 @@ class Settings:
     def validate(self):
         if not self.model_id.endswith("-Base"):
             raise ValueError("Voice cloning requires a Qwen3-TTS Base model")
-        if not self.s3_bucket:
-            raise ValueError("S3_BUCKET is required for accessible output URLs")
-        if not self.reference_hosts:
-            raise ValueError("REFERENCE_HOSTS must list trusted audio download hosts")

@@ -6,7 +6,7 @@ from pathlib import Path
 from app.alignment import write_captions
 from app.audio_processor import process_segments
 from app.config import Settings
-from app.storage import Storage
+from app.storage import LocalStorage, Storage
 from app.text_chunker import chunk_text
 from app.text_normalizer import normalize
 from app.voice_manager import VoiceManager, fetch_reference
@@ -19,7 +19,8 @@ class Worker:
         self.settings.data_dir.mkdir(parents=True, exist_ok=True)
         self.settings.hf_home.mkdir(parents=True, exist_ok=True)
         os.environ["HF_HOME"] = str(self.settings.hf_home)
-        self.storage = storage or Storage(self.settings)
+        self.storage_mode = "s3" if self.settings.s3_bucket else "local"
+        self.storage = storage or (Storage(self.settings) if self.settings.s3_bucket else LocalStorage(self.settings))
         self.voices = VoiceManager(self.settings, self.storage)
         self.loaded_profiles = self.voices.list_profiles()
         if engine is None:
@@ -53,8 +54,13 @@ class Worker:
                     files, segments, duration = process_segments(waves, sr, workdir, float(data.get("speed", 1.0)), fmt)
                     files.update(write_captions(segments, workdir))
                     job_id = uuid.uuid4().hex
-                    urls = {name: self.storage.upload(path, f"outputs/{job_id}/{path.name}") for name, path in files.items()}
-                return {"status": "completed", "voice_id": profile["voice_id"], "audio_url": urls[fmt], "wav_url": urls["wav"], "raw_wav_url": urls["raw_wav"], "captions_url": urls["captions"], "segments_url": urls["segments"], "duration": round(duration, 3), "sample_rate": 24000, "alignment_level": "audio_chunk"}
+                    locations = {name: self.storage.upload(path, f"outputs/{job_id}/{path.name}") for name, path in files.items()}
+                result = {"status": "completed", "voice_id": profile["voice_id"], "storage_mode": self.storage_mode, "duration": round(duration, 3), "sample_rate": 24000, "alignment_level": "audio_chunk"}
+                for name, source in (("audio", fmt), ("wav", "wav"), ("raw_wav", "raw_wav"), ("captions", "captions"), ("segments", "segments")):
+                    result[f"{name}_url"] = locations[source] if self.storage_mode == "s3" else None
+                    if self.storage_mode == "local":
+                        result[f"{name}_path"] = locations[source]
+                return result
             raise ValueError("task_type must be register_voice or tts_generate")
         except (KeyError, ValueError, RuntimeError) as exc:
             return {"status": "error", "error_type": type(exc).__name__, "message": str(exc)}
