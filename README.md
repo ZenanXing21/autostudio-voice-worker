@@ -77,10 +77,10 @@ curl -X POST "https://api.runpod.ai/v2/$ENDPOINT_ID/run" \
 声音注册 API 保持兼容：
 
 ```json
-{"input":{"task_type":"register_voice","voice_name":"tech_narrator","reference_audio_url":"https://private-host.example.com/ref.wav?signature=...","reference_text":"准确逐字稿","language":"Chinese"}}
+{"input":{"task_type":"register_voice","voice_name":"tech_narrator","style":"documentary","reference_audio_url":"https://private-host.example.com/ref.wav?signature=...","reference_text":"与该录音逐字一致的文本","language":"Chinese"}}
 ```
 
-URL 注册需要把私有 HTTPS 域名加入 `REFERENCE_HOSTS`。服务拒绝非白名单/非公网地址、跳转和过大的文件。不要提供公开永久链接。
+注册字段名是 `voice_name`、`style`、`reference_audio_url`、`reference_text`；`voice`、`reference` 或 `audio_url` 不是本服务的注册字段。`style` 省略时为 `documentary`。URL 注册需要把私有 HTTPS 域名加入 `REFERENCE_HOSTS`。服务拒绝非白名单/非公网地址、跳转和过大的文件。不要提供公开永久链接。
 
 ## 本地验证、成本与故障
 

@@ -34,10 +34,17 @@ class Worker:
                 raise ValueError("input must be an object or a text string")
             task = data.get("task_type") or "tts_generate"
             if task == "register_voice":
+                required = ("voice_name", "reference_audio_url", "reference_text")
+                missing = [name for name in required if not isinstance(data.get(name), str) or not data[name].strip()]
+                if missing:
+                    raise ValueError(
+                        "register_voice requires nonempty voice_name, reference_audio_url, reference_text; "
+                        "optional style defaults to documentary. Missing or empty: " + ", ".join(missing)
+                    )
                 with tempfile.TemporaryDirectory() as tmp:
                     source = Path(tmp) / "reference_input"
-                    fetch_reference(data["reference_audio_url"], source, self.settings)
-                    profile = self.voices.register(data["voice_name"], source, data["reference_text"], data.get("language", "Chinese"), data.get("style", "documentary"))
+                    fetch_reference(data["reference_audio_url"].strip(), source, self.settings)
+                    profile = self.voices.register(data["voice_name"].strip(), source, data["reference_text"].strip(), data.get("language", "Chinese"), data.get("style", "documentary"))
                 return {"status": "completed", "voice_id": profile["voice_id"], "style": profile["style"], "message": "Voice profile created", "quality": profile["quality"]}
             if task == "tts_generate":
                 text = data.get("text") or data.get("prompt")

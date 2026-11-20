@@ -98,6 +98,23 @@ def test_missing_text_has_actionable_error(tmp_path):
     assert "prompt" in result["message"]
 
 
+@pytest.mark.parametrize("payload", [
+    {"task_type": "register_voice"},
+    {"task_type": "register_voice", "voice_name": "tech_narrator", "reference_audio_url": "", "reference_text": "准确文本"},
+    {"task_type": "register_voice", "voice_name": "tech_narrator", "reference_audio_url": "https://example.com/ref.wav", "reference_text": "  "},
+])
+def test_register_voice_missing_fields_lists_schema(tmp_path, payload):
+    settings = replace(Settings(), data_dir=tmp_path, hf_home=tmp_path / "cache", output_dir=tmp_path / "outputs", s3_bucket="")
+    result = Worker(settings, engine=FakeEngine()).handle({"input": payload})
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "ValueError"
+    assert "voice_name" in result["message"]
+    assert "reference_audio_url" in result["message"]
+    assert "reference_text" in result["message"]
+    assert "style" in result["message"]
+
+
 def test_missing_default_voice_explains_enrollment(tmp_path):
     settings = replace(Settings(), data_dir=tmp_path, hf_home=tmp_path / "cache", output_dir=tmp_path / "outputs", s3_bucket="")
     result = Worker(settings, engine=FakeEngine()).handle({"input": {"text": "你好"}})
