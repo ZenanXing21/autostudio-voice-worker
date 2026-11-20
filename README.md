@@ -18,7 +18,8 @@ Agent 07 -> RunPod job -> 规范化/分句 -> 同一 VoiceClonePrompt 逐段推�
 - 官方 [Qwen3-TTS 仓库](https://github.com/QwenLM/Qwen3-TTS) 的 `Qwen3TTSModel.create_voice_clone_prompt(ref_audio, ref_text)` 和 `generate_voice_clone(text, language, voice_clone_prompt)` 是本项目使用的接口。
 - 模型 ID 为 [`Qwen/Qwen3-TTS-12Hz-1.7B-Base`](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base)。该模型卡及[上游许可证](https://github.com/QwenLM/Qwen3-TTS/blob/main/LICENSE)标注 Apache-2.0；部署前仍请复核所选模型版本与许可。
 - CustomVoice 的预设说话人和 VoiceDesign 的指令接口不替代 Base 的参考音频克隆。Base 未公开可验证的 `style` 或 `speed` 生成参数：速度由 FFmpeg `atempo` 实现；风格需要分别注册**同一人**的 documentary / energetic / calm / conversational 参考录音，未注册的风格会报错。风格效果取决于参考录音，不能保证模型精确复现情绪。
-- 建议从 **24 GB 显存**的 RunPod GPU 起步，`max_workers=1`，测试你的实际文本长度后调整。模型卡未给出本项目可保证的最低显存；24 GB 是保守的部署起点，不是官方硬性要求。Worker 启动时检查 CUDA，根据 GPU 架构选择 bf16/fp16，并使用 SDPA。OOM 时清空 CUDA 缓存并报告错误。
+- 建议从 **24 GB 显存**的 RunPod GPU 起步，`max_workers=1`，测试你的实际文本长度后调整。模型卡未给出本项目可保证的最低显存；24 GB 是保守的部署起点，不是官方硬性要求。镜像从 [PyTorch 官方 CUDA 12.6 wheel 索引](https://pytorch.org/get-started/previous-versions/)安装 `torch==2.7.1` 和 `torchaudio==2.7.1`，并在构建时断言最终安装的是 `2.7.1+cu126`。Worker 启动时打印 PyTorch/CUDA 版本、实际 GPU 名称、计算能力、显存，并执行一次 CUDA 运算；失败即退出并在日志中报告原因。推理时根据 `torch.cuda.is_bf16_supported()` 选择 bf16 或 fp16，使用 SDPA。OOM 时清空 CUDA 缓存并报告错误。
+- 截图中的 RTX 3090、RTX A4000/A5000/A6000、A40 属于 NVIDIA 列出的 8.6 计算能力，L4 和 RTX 2000/4000 Ada 属于 8.9；见 [NVIDIA GPU 列表](https://developer.nvidia.com/cuda/gpus)。代码不按型号写死，启动自检会检测实际分配的卡。**自检通过只说明 CUDA wheel 能在该卡上运行，不保证 1.7B 模型能装进显存或完成长文本推理。** 16 GB 档位需用真实 1.7B 作业测试；如显存不足，可显式改用 0.6B Base，系统不会悄悄换模型。
 - 代码与接口按 2026-11-19 官方资料核对；本地 6 GB GPU 已验证 0.6B Base 克隆，**1.7B Base 尚未在 RunPod 实测**。
 
 ## 录音与声音注册
@@ -108,7 +109,7 @@ python -m compileall -q app handler.py scripts
 docker build -t autostudio-voice-worker:local .
 ```
 
-`CUDA GPU is required`：检查 RunPod GPU 类型和 Endpoint；`GPU out of memory`：减小 `CHUNK_CHARS` 或换更大 GPU；找不到声音：确认同一区域挂载同一 Network Volume、`DATA_DIR` 正确；注册失败：核对录音与逐字稿、白名单、私有 URL 有效期；S3 上传失败：核对密钥、桶、区域和 R2 endpoint。使用真实 GPU 与本人授权录音完成端到端试听后再接 Agent 07。
+`CUDA self-check failed: CPU-only PyTorch`：检查构建日志中的 wheel 版本断言；`CUDA GPU unavailable`：检查 RunPod GPU 分配和驱动；`no kernel image is available`：该 wheel 无法在分配的 GPU 上运行，应更换匹配的 PyTorch CUDA wheel/镜像；`GPU out of memory`：减小 `CHUNK_CHARS` 或换更大 GPU；找不到声音：确认同一区域挂载同一 Network Volume、`DATA_DIR` 正确；注册失败：核对录音与逐字稿、白名单、私有 URL 有效期；S3 上传失败：核对密钥、桶、区域和 R2 endpoint。使用真实 GPU 与本人授权录音完成端到端试听后再接 Agent 07。
 
 ### 本地验证记录（2026-11-19）
 

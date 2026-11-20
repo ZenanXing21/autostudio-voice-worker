@@ -6,8 +6,7 @@ class TTSEngine:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA GPU is required")
         from qwen_tts import Qwen3TTSModel
-        major, _ = torch.cuda.get_device_capability()
-        dtype = torch.bfloat16 if major >= 8 else torch.float16
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
         self.model = Qwen3TTSModel.from_pretrained(model_id, device_map="cuda:0", dtype=dtype, attn_implementation="sdpa")
         self.prompt_cache = {}
 
