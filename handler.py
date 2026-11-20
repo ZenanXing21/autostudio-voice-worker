@@ -1,7 +1,7 @@
 import runpod
 
-from app.handler import Worker
+from app.handler import handler
 
 
-worker = Worker()
-runpod.serverless.start({"handler": worker.handle})
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})
