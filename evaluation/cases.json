@@ -1,0 +1,7 @@
+[
+  {"id":"zh_tech","language":"Chinese","text":"人工智能正在改变内容创作。今天我们介绍一个开源语音项目。"},
+  {"id":"en_tech","language":"English","text":"Today we will explore a practical open source voice synthesis workflow."},
+  {"id":"mixed_tech","language":"Auto","text":"这个 GitHub 项目使用 GPT-SoVITS 生成中文和 English 配音。"},
+  {"id":"numbers","language":"Chinese","text":"版本二点零支持百分之八十的常见场景，今天测试三段音频。"},
+  {"id":"long_form","language":"Chinese","text":"在科技科普视频里，清晰的发音比夸张的情绪更重要。首先解释问题，再展示方法，最后核对结果。每个句子都应该自然衔接。"}
+]

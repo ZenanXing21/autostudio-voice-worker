@@ -11,5 +11,8 @@ samples
 *.mp3
 *.m4a
 *.safetensors
+*.ckpt
+*.pth
+*.pt
 tests
 README.md

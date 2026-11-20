@@ -5,7 +5,9 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Settings:
-    model_id: str = os.getenv("MODEL_ID", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+    tts_backend: str = os.getenv("TTS_BACKEND", "gpt_sovits")
+    gpt_sovits_model_dir: Path = Path(os.getenv("GPT_SOVITS_MODEL_DIR", "/runpod-volume/gpt-sovits"))
+    gpt_sovits_source_dir: Path = Path(os.getenv("GPT_SOVITS_SOURCE_DIR", "/opt/GPT-SoVITS"))
     data_dir: Path = Path(os.getenv("DATA_DIR", "/runpod-volume/autostudio"))
     hf_home: Path = Path(os.getenv("HF_HOME", "/runpod-volume/hf-cache"))
     output_dir: Path = Path(os.getenv("OUTPUT_DIR", "/workspace/outputs"))
@@ -19,5 +21,5 @@ class Settings:
     presign_seconds: int = int(os.getenv("PRESIGN_SECONDS", "3600"))
 
     def validate(self):
-        if not self.model_id.endswith("-Base"):
-            raise ValueError("Voice cloning requires a Qwen3-TTS Base model")
+        if self.tts_backend != "gpt_sovits":
+            raise ValueError("TTS_BACKEND must be gpt_sovits")

@@ -23,17 +23,16 @@ class Worker:
         self.storage = storage or (Storage(self.settings) if self.settings.s3_bucket else LocalStorage(self.settings))
         self.voices = VoiceManager(self.settings, self.storage)
         self.loaded_profiles = self.voices.list_profiles()
-        if engine is None:
-            from app.tts_engine import TTSEngine
-            engine = TTSEngine(self.settings.model_id)
         self.engine = engine
 
     def handle(self, job):
         data = job.get("input", job)
         try:
+            if isinstance(data, str):
+                data = {"text": data}
             if not isinstance(data, dict):
-                raise ValueError("input must be an object")
-            task = data.get("task_type")
+                raise ValueError("input must be an object or a text string")
+            task = data.get("task_type") or "tts_generate"
             if task == "register_voice":
                 with tempfile.TemporaryDirectory() as tmp:
                     source = Path(tmp) / "reference_input"
@@ -41,12 +40,17 @@ class Worker:
                     profile = self.voices.register(data["voice_name"], source, data["reference_text"], data.get("language", "Chinese"), data.get("style", "documentary"))
                 return {"status": "completed", "voice_id": profile["voice_id"], "style": profile["style"], "message": "Voice profile created", "quality": profile["quality"]}
             if task == "tts_generate":
-                text = data["text"]
+                text = data.get("text") or data.get("prompt")
+                if not isinstance(text, str) or not text.strip():
+                    raise ValueError("text or prompt is required and must be nonempty")
                 if len(text) > self.settings.max_text_chars:
                     raise ValueError("text exceeds MAX_TEXT_CHARS")
-                profile = self.voices.get(data["voice_id"], data.get("style", "documentary"))
+                profile = self.voices.get(data.get("voice_id") or "tech_narrator", data.get("style", "documentary"))
                 normalized = normalize(text, os.getenv("PRONUNCIATION_DICTIONARY", "/app/pronunciation.json"))
                 chunks = chunk_text(normalized, self.settings.chunk_chars)
+                if self.engine is None:
+                    from app.gpt_sovits_engine import GPTSoVITSEngine
+                    self.engine = GPTSoVITSEngine(self.settings)
                 waves, sr = self.engine.generate(profile, chunks, data.get("language", "Auto"))
                 with tempfile.TemporaryDirectory() as tmp:
                     workdir = Path(tmp)

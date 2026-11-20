@@ -87,7 +87,10 @@ class VoiceManager:
     def get(self, voice_id, style="documentary"):
         _, audio, metadata = self._paths(voice_id, style)
         if not metadata.exists() or not audio.exists():
-            raise ValueError(f"voice {voice_id!r} has no registered {style!r} reference")
+            raise ValueError(
+                f"voice {voice_id!r} has no registered {style!r} reference in DATA_DIR; "
+                "run register_voice once or mount the volume containing this profile"
+            )
         profile = json.loads(metadata.read_text(encoding="utf-8"))
         profile["reference_audio_path"] = str(audio)
         return profile

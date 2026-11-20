@@ -1,7 +1,6 @@
-qwen-tts==0.1.1
 runpod>=1.7,<2
 boto3>=1.35,<2
 requests>=2.32,<3
-numpy>=1.26,<3
+numpy>=1.26,<2
 soundfile>=0.13,<1
-imageio-ffmpeg==0.8.1
+huggingface-hub>=0.30,<1

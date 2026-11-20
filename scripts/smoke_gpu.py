@@ -9,7 +9,7 @@ from app.alignment import write_captions
 from app.audio_processor import process_segments
 from app.config import Settings
 from app.text_chunker import chunk_text
-from app.tts_engine import TTSEngine
+from app.gpt_sovits_engine import GPTSoVITSEngine
 from app.voice_manager import VoiceManager
 
 
@@ -25,7 +25,7 @@ def main():
     args = parser.parse_args()
     settings = replace(Settings(), data_dir=args.data_dir)
     profile = VoiceManager(settings).get(args.voice_id, args.style)
-    engine = TTSEngine(settings.model_id)
+    engine = GPTSoVITSEngine(settings)
     chunks = chunk_text(args.text, settings.chunk_chars)
     waves, sample_rate = engine.generate(profile, chunks, args.language)
     files, segments, duration = process_segments(waves, sample_rate, args.output_dir, 1.0, args.format)

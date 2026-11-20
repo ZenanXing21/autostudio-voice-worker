@@ -2,4 +2,4 @@
 set -eu
 ffmpeg -version >/dev/null
 sox --version >/dev/null
-exec python -u handler.py
+exec python -u /app/handler.py
